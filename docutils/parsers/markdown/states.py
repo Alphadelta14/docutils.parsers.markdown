@@ -61,11 +61,13 @@ class MarkdownBaseState(State):
 class Section(MarkdownBaseState):
     node_class = docutils.nodes.section
     patterns = {
+        'ulist': r'([*+-]) ',
         'section': r'(#+)([^#].+)',
         'paragraph': r'.',
         'new_paragraph': r'',
     }
     initial_transitions = (
+        'ulist',
         'section',
         'paragraph',
         'new_paragraph',
@@ -105,6 +107,21 @@ class Section(MarkdownBaseState):
             raise TransitionCorrection('new_paragraph')
         last_child.append(docutils.nodes.Text(match.string+'\n'))
         return context, next_state, []
+
+    def ulist(self, match, context, next_state):
+        """
+        """
+        node = docutils.nodes.bullet_list()
+        node['bullet'] = match.group(1)
+        if context.children:
+            last_child = context.children[-1]
+            if not last_child.children and isinstance(last_child, docutils.nodes.paragraph):
+                context.replace(last_child, node)
+            else:
+                context.append(node)
+        else:
+            context.append(node)
+        return context, next_state, self.enter(node, 'UList')
 
 
 @state
