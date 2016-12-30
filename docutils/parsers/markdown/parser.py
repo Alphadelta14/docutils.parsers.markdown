@@ -18,6 +18,5 @@ class MarkdownParser(docutils.parsers.Parser):
         )
         # inliner = states.Inliner()
         context = Context(document)
-        self.statemachine.debug = True
         self.statemachine.run(inputlines, context=document)
         self.finish_parse()

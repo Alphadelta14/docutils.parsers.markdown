@@ -31,15 +31,18 @@ def indent(line, indent=0, lazy=False, indent_chars=None):
         return line
     while '\t' in line[:indent]:
         line = line[:indent].expandtabs(4)+line[indent:]
-    if not lazy and line[:indent].strip(' '):
+    if line[:indent].strip(' '):
+        if lazy:
+            return line.lstrip(' ')
         raise EOFError('Unindented')
-    return line
+    return line[indent:]
 
 
 class MarkdownStateMachine(StateMachine):
     """Markdown master StateMachine
     """
-    def __init__(self, state_classes, initial_state, debug=False, indent=0, indent_chars=None):
+    def __init__(self, state_classes, initial_state, debug=False, indent=0,
+                 indent_chars=None):
         StateMachine.__init__(self, state_classes, initial_state, debug)
         self.indent = indent
         self.indent_chars = indent_chars
@@ -67,7 +70,12 @@ class MarkdownStateMachine(StateMachine):
 
     def next_line(self, nth=1):
         line = StateMachine.next_line(self, nth)
-        self.line = indent(line, self.indent, self.lazy, self.indent_chars)
+        try:
+            self.line = indent(line, self.indent, self.lazy, self.indent_chars)
+        except EOFError:
+            self.line_offset -= nth
+            self.line = None
+            raise
         return self.line
 
 
@@ -98,9 +106,10 @@ class MarkdownBaseState(State):
             return re.compile(self.patterns[name]), self.raise_eof, next_state
 
     def raise_eof(self, match, context, next_state):
+        self.state_machine.previous_line()
         raise EOFError
 
-    def enter(self, context, next_state, nth=0, indent=0, indent_chars=None):
+    def enter(self, context, next_state, nth=0, indent=0, **kwargs):
         """Enters a nested statemachine.
 
         Parameters:
@@ -113,8 +122,9 @@ class MarkdownBaseState(State):
         ofs = self.state_machine.line_offset+nth
         self.state_machine.next_line(nth)
         input_lines = self.state_machine.input_lines[ofs:]
+        sm_kwargs['debug'] = self.state_machine.debug
         sm_kwargs['indent'] = self.state_machine.indent+indent
-        sm_kwargs['indent_chars'] = indent_chars
+        sm_kwargs.update(kwargs)
         substate_machine = self.nested_sm(**sm_kwargs)
         results = substate_machine.run(
             input_lines, input_offset,
@@ -303,12 +313,13 @@ class UListContainer(MarkdownBaseState):
         mark_len = match.end()
         # FIXME: Negative indents will force new list
         self.state_machine.indent += match.start(1)
+        line = ' '*mark_len+match.string[mark_len:]
+        self.state_machine.input_lines[self.state_machine.line_offset] = line
         return context, next_state, self.enter(node, 'ListItem', indent=mark_len)
 
     def ulist(self, match, context, next_state):
         if match.group(1) != context['bullet']:
             raise EOFError('New list')
-        node = docutils.nodes.list_item()
         return self.list_item(match, context, next_state)
 
 
@@ -328,5 +339,11 @@ class OListContainer(UListContainer):
 @state
 class ListItem(Section):
     def blank(self, match, context, next_state):
-        context.parent.tight = False
+        try:
+            self.state_machine.next_line()
+        except EOFError:
+            pass
+        else:
+            self.state_machine.previous_line()
+            context.parent.tight = False
         return context, next_state, []
