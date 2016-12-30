@@ -4,7 +4,8 @@
 """
 
 import docutils.nodes
-from docutils.statemachine import StateMachine, State, TransitionCorrection
+from docutils.statemachine import StateMachine, State,\
+    TransitionCorrection, TransitionMethodNotFound
 
 __all__ = ['MarkdownStateMachine']
 
@@ -76,16 +77,33 @@ class MarkdownBaseState(State):
         'initial_state': 'Body',
     }
     patterns = {
-        'ulist': r'([*+-]) ',
-        'olist': r'(\d+)([.)]) ',
+        'ulist': r'\s{0,3}([*+-]) ',
+        'olist': r'\s{0,3}(\d+)([.)]) ',
+        'olist_only_one': r'(1)([.)]) ',
         'section': r'\s{0,3}(#{1,6})([^#].*)',
         'fence': r'\s{0,3}(```|~~~)',
         'thematic_break': r'\s{0,3}([*_-])\s*(\1\s*){2,}$',
         'paragraph': r'.',
-        'paragraph_end': r'[\t ]*$',
+        'blank': r'[\t ]*$',
     }
 
-    def enter(self, context, next_state, nth=0, indent=0):
+    def make_transition(self, name, next_state):
+        if next_state is None:
+            next_state = self.__class__.__name__
+        try:
+            return MarkdownBaseState.make_transition(self, name, next_state)
+        except TransitionMethodNotFound:
+            return self.patterns[name], self.raise_eof, next_state
+
+    def raise_eof(self, match, context, next_state):
+        raise EOFError
+
+    def slice_lines(self, nth=0):
+        ofs = self.state_machine.line_offset+nth
+        self.state_machine.next_line(nth)
+        return self.state_machine.input_lines[ofs:]
+
+    def enter(self, context, next_state, input_lines=None):
         """Enters a nested statemachine.
 
         Parameters:
@@ -94,10 +112,11 @@ class MarkdownBaseState(State):
         - `next_state` : str
         """
         substate_machine = self.nested_sm(**self.nested_sm_kwargs)
-        ofs = self.state_machine.line_offset+nth
+        input_offset = self.state_machine.abs_line_offset()
+        if input_lines is None:
+            input_lines = self.slice_lines()
         results = substate_machine.run(
-            indented_lines(self.state_machine.input_lines[ofs:], indent),
-            self.state_machine.abs_line_offset(),
+            input_lines, input_offset,
             context=context, initial_state=next_state
         )
         self.state_machine.goto_line(substate_machine.abs_line_offset())
@@ -109,9 +128,11 @@ class Section(MarkdownBaseState):
     initial_transitions = (
         'thematic_break',
         'section',
+        'fence',
         'ulist',
+        'olist',
+        'blank',
         'paragraph',
-        'new_paragraph',
     )
 
     def thematic_break(self, match, context, next_state):
@@ -134,7 +155,8 @@ class Section(MarkdownBaseState):
             trans_context = subcontext
         header = docutils.nodes.title(text=match.group(2).lstrip())
         subcontext.append(header)
-        return context, next_state, self.enter(subcontext, 'Section', nth=1)
+        lines = self.slice_lines(1)
+        return context, next_state, self.enter(subcontext, 'Section', lines)
 
     def paragraph(self, match, context, next_state):
         """Append text to the last paragraph.
@@ -149,19 +171,24 @@ class Section(MarkdownBaseState):
         context.append(node)
         return context, next_state, self.enter(node, 'Paragraph')
 
+    def blank(self, match, context, next_state):
+        return context, next_state, []
+
     def ulist(self, match, context, next_state):
         """
         """
         node = docutils.nodes.bullet_list()
         node['bullet'] = match.group(1)
         context.append(node)
-        return context, next_state, self.enter(node, 'ListContainer')
+        return context, next_state, self.enter(node, 'UListContainer')
 
     def olist(self, match, context, next_state):
         node = docutils.nodes.enumerated_list()
         node['enumtype'] = 'arabic'
+        node['start'] = int(match.group(1))
+        node.delimiter = match.group(2)
         context.append(node)
-        return context, next_state, self.enter(node, 'ListContainer')
+        return context, next_state, self.enter(node, 'OListContainer')
 
 
 @state
@@ -178,17 +205,74 @@ class Paragraph(MarkdownBaseState):
         'thematic_break',
         'section',
         'fence',
-        'paragraph_end',
+        'ulist',
+        'olist_only_one',
+        'blank',
         'paragraph',
     )
-
-    def paragraph_end(self, match, context, next_state):
-        raise EOFError('End of paragraph')
-    thematic_break = paragraph_end
-    section = paragraph_end
-    fence = paragraph_end
 
     def paragraph(self, match, context, next_state):
         # TODO: handle inline markup
         context.append(docutils.nodes.Text(match.string))
         return context, next_state, []
+
+
+@state
+class UListContainer(MarkdownBaseState):
+    initial_transitions = (
+        'blank',
+        'ulist',
+    )
+
+    def bof(self, context):
+        context.tight = True
+        return context, []
+
+    def eof(self, context):
+        if context.tight:
+            # For tight lists, replace paragraphs with their contents directly
+            for subnode in context.children[:]:
+                if subnode.children:
+                    child = subnode.children[0]
+                    if isinstance(child, docutils.nodes.paragraph):
+                        subnode.replace(child, child.children)
+        return []
+
+    def no_match(self, context, transitions):
+        raise EOFError
+
+    def blank(self, match, context, next_state):
+        context.tight = False
+        return context, next_state, []
+
+    def slice_lines(self, nth=0):
+        lines = MarkdownBaseState.slice_lines(nth)
+        return lines
+
+    def ulist(self, match, context, next_state):
+        if match.group(1) != context['bullet']:
+            raise EOFError('New list')
+        node = docutils.nodes.list_item()
+        return context, next_state, self.enter(node, 'ListItem')
+
+
+@state
+class OListContainer(UListContainer):
+    initial_transitions = (
+        'blank',
+        'olist',
+    )
+
+    def olist(self, match, context, next_state):
+        if match.group(2) != context.delimiter:
+            raise EOFError('New list')
+        node = docutils.nodes.list_item()
+        return context, next_state, self.enter(node, 'ListItem')
+
+
+@state
+class ListItem(Section):
+    def blank(self, match, context, next_state):
+        context.parent.tight = False
+        return context, next_state, []
+
