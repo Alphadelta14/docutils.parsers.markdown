@@ -3,6 +3,8 @@
 >>> state_machine = MarkdownStateMachine.create()
 """
 
+import re
+
 import docutils.nodes
 from docutils.statemachine import StateMachine, State,\
     TransitionCorrection, TransitionMethodNotFound
@@ -39,7 +41,7 @@ class MarkdownStateMachine(StateMachine):
     """
     def __init__(self, state_classes, initial_state, debug=False, indent=0, indent_chars=None):
         StateMachine.__init__(self, state_classes, initial_state, debug)
-        self.indent = 0
+        self.indent = indent
         self.indent_chars = indent_chars
         self.lazy = False
 
@@ -93,7 +95,7 @@ class MarkdownBaseState(State):
         try:
             return State.make_transition(self, name, next_state)
         except TransitionMethodNotFound:
-            return self.patterns[name], self.raise_eof, next_state
+            return re.compile(self.patterns[name]), self.raise_eof, next_state
 
     def raise_eof(self, match, context, next_state):
         raise EOFError
