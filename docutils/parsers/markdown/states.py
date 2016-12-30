@@ -19,36 +19,25 @@ def state(cls):
     return cls
 
 
-def indented_lines(lines, indent=0, permitted=' '):
-    """Trims indentation from lines.
-
-    Returns:
-
-    - `lines`: a new trimmed list(str) of lines
-    """
-
-    def trimmed():
-        for line in lines:
-            if line.strip('\t '):
-                # commonmark: @blank-line
-                yield ''
-                continue
-            if not indent:
-                yield line
-                continue
-            # only expand tabs at the start of the line
-            while '\t' in line[:indent]:
-                line = line[:indent].expandtabs(4)+line[indent:]
-            if line[:indent].strip(permitted):
-                return
-    return [line for line in trimmed()]
+def indent(line, indent=0, lazy=False):
+    if not line.strip('\t '):
+        return ''
+    if not indent:
+        return line
+    while '\t' in line[:indent]:
+        line = line[:indent].expandtabs(4)+line[indent:]
+    if not lazy and line[:indent].strip(' '):
+        raise EOFError('Unindented')
+    return line
 
 
 class MarkdownStateMachine(StateMachine):
     """Markdown master StateMachine
     """
-    def __init__(self, state_classes, initial_state, debug=False):
+    def __init__(self, state_classes, initial_state, debug=False, indent=0):
         StateMachine.__init__(self, state_classes, initial_state, debug)
+        self.indent = 0
+        self.lazy = False
 
     @classmethod
     def create(cls):
@@ -69,6 +58,11 @@ class MarkdownStateMachine(StateMachine):
         """
         return StateMachine.run(self, input_lines, input_offset, context,
                                 input_source, initial_state)
+
+    def next_line(self, nth):
+        line = StateMachine.next_line(self, nth)
+        self.line = indent(line, self.indent, self.lazy)
+        return self.line
 
 
 class MarkdownBaseState(State):
@@ -98,12 +92,7 @@ class MarkdownBaseState(State):
     def raise_eof(self, match, context, next_state):
         raise EOFError
 
-    def slice_lines(self, nth=0):
-        ofs = self.state_machine.line_offset+nth
-        self.state_machine.next_line(nth)
-        return self.state_machine.input_lines[ofs:]
-
-    def enter(self, context, next_state, input_lines=None):
+    def enter(self, context, next_state, nth=0, indent=0):
         """Enters a nested statemachine.
 
         Parameters:
@@ -113,11 +102,13 @@ class MarkdownBaseState(State):
         """
         substate_machine = self.nested_sm(**self.nested_sm_kwargs)
         input_offset = self.state_machine.abs_line_offset()
-        if input_lines is None:
-            input_lines = self.slice_lines()
+        ofs = self.state_machine.line_offset+nth
+        self.state_machine.next_line(nth)
+        input_lines = self.state_machine.input_lines[ofs:]
+        indent += self.state_machine.indent
         results = substate_machine.run(
             input_lines, input_offset,
-            context=context, initial_state=next_state
+            context=context, initial_state=next_state, indent=indent
         )
         self.state_machine.goto_line(substate_machine.abs_line_offset())
         return results
@@ -155,18 +146,9 @@ class Section(MarkdownBaseState):
             trans_context = subcontext
         header = docutils.nodes.title(text=match.group(2).lstrip())
         subcontext.append(header)
-        lines = self.slice_lines(1)
-        return context, next_state, self.enter(subcontext, 'Section', lines)
+        return context, next_state, self.enter(subcontext, 'Section', nth=1)
 
     def paragraph(self, match, context, next_state):
-        """Append text to the last paragraph.
-
-        If the last child was not a paragraph, step back and create a new one.
-        `self.previous_line()` is called manually because `self.new_paragraph`
-        will swallow a line, so we'd like it to swallow the line before the
-        paragraph start. (An implicit call to `self.previous_line()` is made
-        when correcting transition)
-        """
         node = docutils.nodes.paragraph()
         context.append(node)
         return context, next_state, self.enter(node, 'Paragraph')
@@ -211,6 +193,11 @@ class Paragraph(MarkdownBaseState):
         'paragraph',
     )
 
+    def bof(self, context):
+        context, result = MarkdownBaseState.bof(self, context)
+        self.state_machine.lazy = True
+        return context, result
+
     def paragraph(self, match, context, next_state):
         # TODO: handle inline markup
         context.append(docutils.nodes.Text(match.string))
@@ -245,15 +232,19 @@ class UListContainer(MarkdownBaseState):
         context.tight = False
         return context, next_state, []
 
-    def slice_lines(self, nth=0):
-        lines = MarkdownBaseState.slice_lines(nth)
-        return lines
+    def list_item(self, match, context, next_state):
+        node = docutils.nodes.list_item()
+        context.append(node)
+        mark_len = match.end()
+        # FIXME: Negative indents will force new list
+        self.state_machine.indent += match.start(1)
+        return context, next_state, self.enter(node, 'ListItem', indent=mark_len)
 
     def ulist(self, match, context, next_state):
         if match.group(1) != context['bullet']:
             raise EOFError('New list')
         node = docutils.nodes.list_item()
-        return context, next_state, self.enter(node, 'ListItem')
+        return self.list_item(match, context, next_state)
 
 
 @state
@@ -266,8 +257,7 @@ class OListContainer(UListContainer):
     def olist(self, match, context, next_state):
         if match.group(2) != context.delimiter:
             raise EOFError('New list')
-        node = docutils.nodes.list_item()
-        return context, next_state, self.enter(node, 'ListItem')
+        return self.list_item(match, context, next_state)
 
 
 @state
@@ -275,4 +265,3 @@ class ListItem(Section):
     def blank(self, match, context, next_state):
         context.parent.tight = False
         return context, next_state, []
-
