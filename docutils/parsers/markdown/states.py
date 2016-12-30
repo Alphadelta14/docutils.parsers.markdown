@@ -145,10 +145,14 @@ class Section(MarkdownBaseState):
 
     def section(self, match, context, next_state):
         level = match.group(1).count('#')
-        if level <= context.level:
+        supersection = context
+        # Find the node that is actually a true section or root Body
+        while not hasattr(supersection, 'level'):
+            supersection = supersection.parent
+        if level <= supersection.level:
             raise EOFError()
         trans_context = context
-        while level > context.level:
+        while level > supersection.level:
             subcontext = docutils.nodes.section()
             subcontext.level = level
             trans_context.append(subcontext)
