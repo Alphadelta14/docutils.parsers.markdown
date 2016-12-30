@@ -75,7 +75,7 @@ class MarkdownBaseState(State):
         'olist': r'\s{0,3}(\d+)([.)]) ',
         'olist_only_one': r'(1)([.)]) ',
         'section': r'\s{0,3}(#{1,6})([^#].*)',
-        'fence': r'\s{0,3}(```|~~~)',
+        'fence': r'\s{0,3}(`{3,}|~{3,})',
         'thematic_break': r'\s{0,3}([*_-])\s*(\1\s*){2,}$',
         'paragraph': r'.',
         'blank': r'[\t ]*$',
@@ -148,6 +148,16 @@ class Section(MarkdownBaseState):
         subcontext.append(header)
         return context, next_state, self.enter(subcontext, 'Section', nth=1)
 
+    def fence(self, match, context, next_state):
+        opening = match.group(1)
+        lang = match.string[match.end(1):].strip()
+        node = docutils.nodes.literal_block()
+        if lang:
+            lang = lang.split(' ')[0]
+            node['classes'].append(lang)
+        node.opening = opening
+        return context, next_state, self.enter(node, 'Code', nth=1)
+
     def paragraph(self, match, context, next_state):
         node = docutils.nodes.paragraph()
         context.append(node)
@@ -202,6 +212,34 @@ class Paragraph(MarkdownBaseState):
         # TODO: handle inline markup
         context.append(docutils.nodes.Text(match.string))
         return context, next_state, []
+
+
+@state
+class Code(MarkdownBaseState):
+    initial_transitions = (
+        'fence',
+        'blank',
+        'paragraph',
+    )
+
+    def eof(self, context):
+        joined = '\n'.join(context.children)
+        context.clear()
+        context.append(docutils.nodes.Text(joined))
+        return []
+
+    def fence(self, match, context, next_state):
+        opening = match.group(1)
+        if context.opening and context.opening in opening:
+            self.state_machine.next_line()
+            raise EOFError('End fence found')
+        else:
+            raise TransitionCorrection('paragraph')
+
+    def paragraph(self, match, context, next_state):
+        context.append(docutils.nodes.Text(match.string))
+        return context, next_state, []
+    blank = paragraph
 
 
 @state
