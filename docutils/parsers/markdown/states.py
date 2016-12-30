@@ -19,7 +19,10 @@ def state(cls):
     return cls
 
 
-def indent(line, indent=0, lazy=False):
+def indent(line, indent=0, lazy=False, indent_chars=None):
+    if indent_chars is not None:
+        if line.strip('\t ').startswith(indent_chars):
+            line = line.replace(indent_chars, ' ', 1)
     if not line.strip('\t '):
         return ''
     if not indent:
@@ -34,9 +37,10 @@ def indent(line, indent=0, lazy=False):
 class MarkdownStateMachine(StateMachine):
     """Markdown master StateMachine
     """
-    def __init__(self, state_classes, initial_state, debug=False, indent=0):
+    def __init__(self, state_classes, initial_state, debug=False, indent=0, indent_chars=None):
         StateMachine.__init__(self, state_classes, initial_state, debug)
         self.indent = 0
+        self.indent_chars = indent_chars
         self.lazy = False
 
     @classmethod
@@ -61,7 +65,7 @@ class MarkdownStateMachine(StateMachine):
 
     def next_line(self, nth):
         line = StateMachine.next_line(self, nth)
-        self.line = indent(line, self.indent, self.lazy)
+        self.line = indent(line, self.indent, self.lazy, self.indent_chars)
         return self.line
 
 
@@ -77,6 +81,7 @@ class MarkdownBaseState(State):
         'section': r'\s{0,3}(#{1,6})([^#].*)',
         'code_block': r'    ',
         'fence': r'\s{0,3}(`{3,}|~{3,})',
+        'block_quote': r'\s{0,3}>',
         'thematic_break': r'\s{0,3}([*_-])\s*(\1\s*){2,}$',
         'paragraph': r'.',
         'blank': r'[\t ]*$',
@@ -93,7 +98,7 @@ class MarkdownBaseState(State):
     def raise_eof(self, match, context, next_state):
         raise EOFError
 
-    def enter(self, context, next_state, nth=0, indent=0):
+    def enter(self, context, next_state, nth=0, indent=0, indent_chars=None):
         """Enters a nested statemachine.
 
         Parameters:
@@ -101,15 +106,17 @@ class MarkdownBaseState(State):
         - `context`: `docutils.nodes.Node`
         - `next_state` : str
         """
-        substate_machine = self.nested_sm(**self.nested_sm_kwargs)
+        sm_kwargs = self.nested_sm_kwargs.copy()
         input_offset = self.state_machine.abs_line_offset()
         ofs = self.state_machine.line_offset+nth
         self.state_machine.next_line(nth)
         input_lines = self.state_machine.input_lines[ofs:]
-        indent += self.state_machine.indent
+        sm_kwargs['indent'] = self.state_machine.indent+indent
+        sm_kwargs['indent_chars'] = indent_chars
+        substate_machine = self.nested_sm(**sm_kwargs)
         results = substate_machine.run(
             input_lines, input_offset,
-            context=context, initial_state=next_state, indent=indent
+            context=context, initial_state=next_state
         )
         self.state_machine.goto_line(substate_machine.abs_line_offset())
         return results
@@ -122,6 +129,7 @@ class Section(MarkdownBaseState):
         'section',
         'code_block',
         'fence',
+        'block_quote',
         'ulist',
         'olist',
         'blank',
@@ -164,6 +172,12 @@ class Section(MarkdownBaseState):
             node['classes'].append(lang)
         node.opening = opening
         return context, next_state, self.enter(node, 'Code', nth=1)
+
+    def block_quote(self, match, context, next_state):
+        node = docutils.nodes.block_quote()
+        mark_len = match.end()
+        return context, next_state, self.enter(node, 'Section', indent=mark_len,
+                                               indent_chars='>')
 
     def paragraph(self, match, context, next_state):
         node = docutils.nodes.paragraph()
