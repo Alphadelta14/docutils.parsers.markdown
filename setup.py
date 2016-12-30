@@ -16,6 +16,9 @@ setup(
     author='Alphadelta14',
     author_email='alpha@alphaservcomputing.solutions',
     license='MIT',
+    scripts=[
+        'bin/markdown2doctree',
+    ],
     install_requires=[
         'docutils',
     ],
