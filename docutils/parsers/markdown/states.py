@@ -75,6 +75,7 @@ class MarkdownBaseState(State):
         'olist': r'\s{0,3}(\d+)([.)]) ',
         'olist_only_one': r'(1)([.)]) ',
         'section': r'\s{0,3}(#{1,6})([^#].*)',
+        'code_block': r'    ',
         'fence': r'\s{0,3}(`{3,}|~{3,})',
         'thematic_break': r'\s{0,3}([*_-])\s*(\1\s*){2,}$',
         'paragraph': r'.',
@@ -119,6 +120,7 @@ class Section(MarkdownBaseState):
     initial_transitions = (
         'thematic_break',
         'section',
+        'code_block',
         'fence',
         'ulist',
         'olist',
@@ -147,6 +149,11 @@ class Section(MarkdownBaseState):
         header = docutils.nodes.title(text=match.group(2).lstrip())
         subcontext.append(header)
         return context, next_state, self.enter(subcontext, 'Section', nth=1)
+
+    def code_block(self, match, context, next_state):
+        node = docutils.nodes.literal_block()
+        node.opening = None
+        return context, next_state, self.enter(node, 'Code', indent=4)
 
     def fence(self, match, context, next_state):
         opening = match.group(1)
