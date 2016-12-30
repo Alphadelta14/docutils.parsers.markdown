@@ -63,7 +63,7 @@ class MarkdownStateMachine(StateMachine):
         return StateMachine.run(self, input_lines, input_offset, context,
                                 input_source, initial_state)
 
-    def next_line(self, nth):
+    def next_line(self, nth=1):
         line = StateMachine.next_line(self, nth)
         self.line = indent(line, self.indent, self.lazy, self.indent_chars)
         return self.line
@@ -87,11 +87,11 @@ class MarkdownBaseState(State):
         'blank': r'[\t ]*$',
     }
 
-    def make_transition(self, name, next_state):
+    def make_transition(self, name, next_state=None):
         if next_state is None:
             next_state = self.__class__.__name__
         try:
-            return MarkdownBaseState.make_transition(self, name, next_state)
+            return State.make_transition(self, name, next_state)
         except TransitionMethodNotFound:
             return self.patterns[name], self.raise_eof, next_state
 
