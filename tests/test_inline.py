@@ -34,3 +34,34 @@ def test_partitioning():
     assert right[0] == ' goodbye'
     assert matched[0][0] == '*world*'
     assert matched[1][0] == 'world'
+
+
+@pytest.mark.parametrize('text,doctree', [
+    ('This is `code` with one tick',
+     '<paragraph>This is <literal>code</literal> with one tick</paragraph>'),
+    ('This is ``code`` with two ticks',
+     '<paragraph>This is <literal>code</literal> with two ticks</paragraph>'),
+    ('This is ``invalid code` with unbalanced ticks',
+     '<paragraph>This is ``invalid code` with unbalanced ticks</paragraph>'),
+    ('This is ```invalid code`` with unbalanced ticks',
+     '<paragraph>This is ```invalid code`` with unbalanced ticks</paragraph>'),
+    ('This is `invalid code`` with unbalanced ticks',
+     '<paragraph>This is `invalid code`` with unbalanced ticks</paragraph>'),
+    ('This is `code` with a second `code` block',
+     '<paragraph>This is <literal>code</literal> with a second '
+     '<literal>code</literal> block</paragraph>'),
+])
+def test_code(text, doctree):
+    node = docutils.nodes.paragraph('', docutils.nodes.Text(text))
+    node = inline.parse_node(node)
+    assert str(node) == doctree
+
+
+@pytest.mark.parametrize('text,doctree', [
+    (r'This \* is escaped',
+     '<paragraph>This * is escaped</paragraph>'),
+])
+def test_escape(text, doctree):
+    node = docutils.nodes.paragraph('', docutils.nodes.Text(text))
+    node = inline.parse_node(node)
+    assert str(node) == doctree

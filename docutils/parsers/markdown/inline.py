@@ -1,5 +1,20 @@
 
+import re
+
 import docutils.nodes
+
+
+class Escaped(docutils.nodes.TextElement):
+    skip = True
+
+    def astext(self):
+        return self.children[0].astext()
+
+    def __unicode__(self):
+        return docutils.nodes.reprunicode(self.children[0])
+
+    def __str__(self):
+        return str(self.children[0])
 
 
 def re_partition(children, expr):
@@ -67,10 +82,24 @@ def re_partition(children, expr):
     return left, middle, right
 
 
+def match_into(children, expr_text, node, group=1):
+    while True:
+        left, middle, right = re_partition(children, re.compile(expr_text))
+        if not middle:
+            break
+        children = left+[node('', middle[group][0])]+right
+    return children
+
+
 def parse_text_nodes(children):
-    raise NotImplementedError()
+    children = match_into(children, r'(?<!\\)(?<!`)(``?)(?!`)(.+?)(?<!`)\1(?!`)',
+                          docutils.nodes.literal, group=2)
+    children = match_into(children, r'(?:\\(.))', Escaped)
     return children
 
 
 def parse_node(node):
-    return parse_text_nodes(node.children)
+    children = parse_text_nodes(node.children)
+    node.clear()
+    node += children
+    return node
