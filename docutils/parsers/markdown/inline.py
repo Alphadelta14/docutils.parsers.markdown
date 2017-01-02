@@ -14,6 +14,8 @@ from docutils.nodes import Text
 
 EXPR_MAP = {
     'ascii': r'[ -~]',
+    'before_word': r'(?:^|(?<=[.\s]))',
+    'after_word': r'(?=$|[.\s])',
 }
 
 
@@ -55,6 +57,7 @@ def re_partition(children, expr):
         end = len(target)
         ranges[id(child)] = [start, end]
     match = expr.search(target)
+    print(expr, target)
     if match is None:
         return children, [], []
     start, end = match.span()
@@ -157,10 +160,19 @@ def parse_entities(children):
     return children
 
 
+def parse_emphasis(children):
+    children = match_into(children, r'(?:^|(?<=[.\s]))\*(.*?)\*(?:$|(?=[.\s]))',
+                          docutils.nodes.emphasis)
+    children = match_into(children, r'(?:^|(?<=[.\s]))_(.*?)_(?:$|(?=[.\s]))',
+                          docutils.nodes.emphasis)
+    return children
+
+
 def parse_text_nodes(children):
     children = parse_code(children)
     children = parse_backslash(children)
     children = parse_entities(children)
+    children = parse_emphasis(children)
     return children
 
 

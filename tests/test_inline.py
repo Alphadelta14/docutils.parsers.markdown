@@ -13,17 +13,6 @@ def test_structure():
     assert inline.parse_text_nodes(nodes) == nodes
 
 
-@pytest.mark.parametrize('original,expected', [
-    ([docutils.nodes.Text('*emphatic text*')],
-     [docutils.nodes.emphasis(docutils.nodes.Text('emphatic text'))]),
-    ([docutils.nodes.Text('*emphatic* text')],
-     [docutils.nodes.emphasis(docutils.nodes.Text('emphatic')),
-      docutils.nodes.Text(' text')]),
-])
-def test_emphasis(original, expected):
-    assert inline.parse_text_nodes(original) == expected
-
-
 def test_partitioning():
     expr = re.compile(r'\*(.*)\*')
     children = [docutils.nodes.Text('hello *world* goodbye')]
@@ -91,3 +80,19 @@ def test_entities(text, doctree):
     node = docutils.nodes.paragraph('', docutils.nodes.Text(text))
     node = inline.parse_node(node)
     assert unicode(node) == doctree
+
+
+@pytest.mark.parametrize('text,doctree', [
+    (r'*test*',
+     '<paragraph><emphasis>test</emphasis></paragraph>'),
+    (r'this is *test* in a sentence',
+     '<paragraph>this is <emphasis>test</emphasis> in a sentence</paragraph>'),
+    (r'emphasis *one* then _two_',
+     '<paragraph>emphasis <emphasis>one</emphasis> then <emphasis>two</emphasis></paragraph>'),
+    (r'this is*inside*of a word',
+     '<paragraph>this is*inside*of a word</paragraph>'),
+])
+def test_emphasis(text, doctree):
+    node = docutils.nodes.paragraph('', docutils.nodes.Text(text))
+    node = inline.parse_node(node)
+    assert str(node) == doctree
