@@ -1,4 +1,6 @@
 
+from __future__ import unicode_literals
+
 import re
 
 import docutils.nodes
@@ -50,6 +52,12 @@ def test_partitioning():
     ('This is `code` with a second `code` block',
      '<paragraph>This is <literal>code</literal> with a second '
      '<literal>code</literal> block</paragraph>'),
+    ('Some `code with &amp; entities`',
+     '<paragraph>Some <literal>code with &amp; entities</literal></paragraph>'),
+    ('Some `code with &amp; entities`',
+     '<paragraph>Some <literal>code with &amp; entities</literal></paragraph>'),
+    ('Some `code with &amp; entities` also outside &quot;',
+     '<paragraph>Some <literal>code with &amp; entities</literal> also outside "</paragraph>'),
 ])
 def test_code(text, doctree):
     node = docutils.nodes.paragraph('', docutils.nodes.Text(text))
@@ -65,3 +73,21 @@ def test_escape(text, doctree):
     node = docutils.nodes.paragraph('', docutils.nodes.Text(text))
     node = inline.parse_node(node)
     assert str(node) == doctree
+
+
+@pytest.mark.parametrize('text,doctree', [
+    ('&copy;', '<paragraph>\u00a9</paragraph>'),
+    ('&amp;', '<paragraph>&</paragraph>'),
+    ('&amp;amp;', '<paragraph>&amp;</paragraph>'),
+    ('&#1234;', '<paragraph>\u04d2</paragraph>'),
+    ('&#x1234;', '<paragraph>\u1234</paragraph>'),
+    ('&#ff;', '<paragraph>&#ff;</paragraph>'),
+    ('&#0;', '<paragraph>\ufffd</paragraph>'),
+    ('&#x0;', '<paragraph>\ufffd</paragraph>'),
+    ('&alpha; &beta; &gamma;', '<paragraph>\u03b1 \u03b2 \u03b3</paragraph>'),
+    ('&nonexistant;', '<paragraph>&nonexistant;</paragraph>'),
+])
+def test_entities(text, doctree):
+    node = docutils.nodes.paragraph('', docutils.nodes.Text(text))
+    node = inline.parse_node(node)
+    assert unicode(node) == doctree
