@@ -3,11 +3,15 @@
 >>> state_machine = MarkdownStateMachine.create()
 """
 
+from __future__ import absolute_import
+
 import re
 
 import docutils.nodes
 from docutils.statemachine import StateMachine, State,\
     TransitionCorrection, TransitionMethodNotFound
+
+from . import inline as inline_markdown
 
 __all__ = ['MarkdownStateMachine']
 
@@ -244,6 +248,10 @@ class Paragraph(MarkdownBaseState):
         context, result = MarkdownBaseState.bof(self, context)
         self.state_machine.lazy = True
         return context, result
+
+    def eof(self, context):
+        inline_markdown.parse_node(context)
+        return []
 
     def paragraph(self, match, context, next_state):
         # TODO: handle inline markup
