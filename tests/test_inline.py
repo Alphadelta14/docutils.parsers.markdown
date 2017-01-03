@@ -114,3 +114,16 @@ def test_strong(text, doctree):
     node = docutils.nodes.paragraph('', docutils.nodes.Text(text))
     node = inline.parse_node(node)
     assert str(node) == doctree
+
+
+@pytest.mark.parametrize('text,doctree', [
+    (r'[Google](http://google.com)',
+     '<paragraph><target refuri="http://google.com">Google</target></paragraph>'),
+    (r'[Search engine](http://google.com "Google")',
+     '<paragraph><target refuri="http://google.com" title="Google">'
+     'Search engine</target></paragraph>'),
+])
+def test_links(text, doctree):
+    node = docutils.nodes.paragraph('', docutils.nodes.Text(text))
+    node = inline.parse_node(node)
+    assert str(node) == doctree

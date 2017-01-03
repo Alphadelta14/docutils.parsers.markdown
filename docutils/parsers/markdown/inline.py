@@ -212,6 +212,27 @@ def parse_entities(children):
     return children
 
 
+def parse_links(children):
+    expr = re.compile(r'\[([^\[\]]*)\]'
+                      r'\(\s*<?([^<> ]*)>?\s*'
+                      r'("[^"]*"|'+r"'[^']'*"+r'|\([^()]\))?\)')
+    while True:
+        left, middle, right = re_partition(children, expr)
+        if not middle:
+            break
+        attrs = {}
+        refuri = ''.join(middle[2])
+        title = ''.join(middle[3])[1:-1]
+        if refuri:
+            attrs['refuri'] = refuri
+        if title:
+            attrs['title'] = title
+        node = docutils.nodes.target('', *middle[1], **attrs)
+        node.skip = True
+        children = left+[node]+right
+    return children
+
+
 def parse_emphasis_strong(children):
     def strong_emphasis(rawsource, text):
         return docutils.nodes.strong(rawsource, docutils.nodes.emphasis(rawsource, text))
@@ -230,6 +251,7 @@ def parse_text_nodes(children):
     children = parse_code(children)
     children = parse_backslash(children)
     children = parse_entities(children)
+    children = parse_links(children)
     children = parse_emphasis_strong(children)
     return children
 
