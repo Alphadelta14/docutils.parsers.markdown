@@ -212,6 +212,28 @@ def parse_entities(children):
     return children
 
 
+def parse_images(children):
+    expr = re.compile(r'!\[([^\[\]]*)\]'
+                      r'\(\s*<?([^<> ]*)>?\s*'
+                      r'("[^"]*"|'+r"'[^']'*"+r'|\([^()]\))?\)')
+    while True:
+        left, middle, right = re_partition(children, expr)
+        if not middle:
+            break
+        attrs = {}
+        description = ''.join(middle[1])
+        url = ''.join(middle[2])
+        title = ''.join(middle[3])[1:-1]
+        if title:
+            attrs['title'] = title
+        attrs['alt'] = description
+        attrs['uri'] = url
+        node = docutils.nodes.image('', **attrs)
+        node.skip = True
+        children = left+[node]+right
+    return children
+
+
 def parse_links(children):
     expr = re.compile(r'\[([^\[\]]*)\]'
                       r'\(\s*<?([^<> ]*)>?\s*'
@@ -255,6 +277,7 @@ def parse_text_nodes(children):
     children = parse_code(children)
     children = parse_backslash(children)
     children = parse_entities(children)
+    children = parse_images(children)
     children = parse_links(children)
     children = parse_emphasis_strong(children)
     return children
