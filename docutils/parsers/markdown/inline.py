@@ -221,13 +221,17 @@ def parse_links(children):
         if not middle:
             break
         attrs = {}
+        text = ''.join(middle[1])
         refuri = ''.join(middle[2])
         title = ''.join(middle[3])[1:-1]
         if refuri:
             attrs['refuri'] = refuri
         if title:
             attrs['title'] = title
-        node = docutils.nodes.target('', *middle[1], **attrs)
+        ids = re.sub(r'\W+', '-', text)
+        attrs['ids'] = ids
+        attrs['names'] = ids
+        node = docutils.nodes.target('', '', *middle[1], **attrs)
         node.skip = True
         children = left+[node]+right
     return children

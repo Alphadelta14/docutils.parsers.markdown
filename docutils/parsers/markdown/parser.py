@@ -14,7 +14,7 @@ class Parser(docutils.parsers.Parser):
         self.statemachine = states.MarkdownStateMachine.create()
         try:
             inputstring = unicode(inputstring.decode('utf-8'))
-        except UnicodeDecodeError:
+        except UnicodeEncodeError:
             pass
         inputlines = docutils.statemachine.string2lines(
             inputstring,

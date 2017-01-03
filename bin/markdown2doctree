@@ -3,7 +3,7 @@
 import os
 import sys
 
-import docutils.parsers.markdown
+import docutils.parsers
 import docutils.utils
 
 
@@ -18,7 +18,7 @@ def main(args=None):
         contents = handle.read()
     docname = os.path.split(filename)[1]
     document = docutils.utils.new_document(docname)
-    parser = docutils.parsers.markdown.MarkdownParser()
+    parser = docutils.parsers.get_parser_class('markdown')()
     parser.parse(contents, document)
     print(document)
     return 0
