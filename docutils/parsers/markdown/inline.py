@@ -250,9 +250,7 @@ def parse_links(children):
             attrs['refuri'] = refuri
         if title:
             attrs['title'] = title
-        ids = re.sub(r'\W+', '-', text)
-        attrs['ids'] = ids
-        attrs['names'] = ids
+        attrs['names'] = docutils.nodes.fully_normalize_name(text)
         node = docutils.nodes.target('', '', *middle[1], **attrs)
         node.skip = True
         children = left+[node]+right
