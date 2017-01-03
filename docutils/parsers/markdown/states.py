@@ -161,6 +161,7 @@ class Section(MarkdownBaseState):
 
     def section(self, match, context, next_state):
         level = match.group(1).count('#')
+        text = match.group(2).lstrip()
         supersection = context
         # Find the node that is actually a true section or root Body
         while not hasattr(supersection, 'level'):
@@ -171,10 +172,12 @@ class Section(MarkdownBaseState):
         while level > supersection.level:
             subcontext = docutils.nodes.section()
             subcontext.level = level
+            subcontext['names'].append(docutils.nodes.fully_normalize_name(text))
+            subcontext['ids'].append(docutils.nodes.make_id(text))
             trans_context.append(subcontext)
             level -= 1
             trans_context = subcontext
-        header = docutils.nodes.title(text=match.group(2).lstrip())
+        header = docutils.nodes.title(text=text)
         subcontext.append(header)
         return context, next_state, self.enter(subcontext, 'Section', nth=1)
 
@@ -305,7 +308,8 @@ class UListContainer(MarkdownBaseState):
                 if subnode.children:
                     child = subnode.children[0]
                     if isinstance(child, docutils.nodes.paragraph):
-                        subnode.replace(child, child.children)
+                        new_child = docutils.nodes.inline('', '', *child.children)
+                        subnode.replace(child, new_child)
         return []
 
     def no_match(self, context, transitions):

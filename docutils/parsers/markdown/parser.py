@@ -3,7 +3,7 @@ import docutils.parsers
 import docutils.statemachine
 
 from docutils.parsers.markdown import states
-from docutils.parsers.markdown.context import Context
+from docutils.parsers.markdown import inline
 
 
 class Parser(docutils.parsers.Parser):
@@ -20,7 +20,6 @@ class Parser(docutils.parsers.Parser):
             inputstring,
             convert_whitespace=True
         )
-        # inliner = states.Inliner()
-        context = Context(document)
         self.statemachine.run(inputlines, context=document)
+        inline.cleanup(document)
         self.finish_parse()

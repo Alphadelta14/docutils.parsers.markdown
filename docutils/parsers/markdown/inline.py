@@ -32,6 +32,15 @@ class Escaped(docutils.nodes.TextElement):
         return str(self.children[0])
 
 
+class CleanupVisitor(docutils.nodes.SparseNodeVisitor):
+    def visit_Escaped(self, node):
+        node.parent.replace(node, node.children)
+
+
+def cleanup(document):
+    document.walk(CleanupVisitor(document))
+
+
 def slice_node(node, split):
     """Splits a node up into two sides.
 
