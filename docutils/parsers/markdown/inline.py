@@ -32,6 +32,60 @@ class Escaped(docutils.nodes.TextElement):
         return str(self.children[0])
 
 
+def slice_node(node, split):
+    """Splits a node up into two sides.
+
+    For text nodes, this will return two text nodes.
+
+    For text elements, this will return two of the source nodes with children
+    distributed on either side. Children that live on the split will be
+    split further.
+
+    Parameters
+    ----------
+    node : docutils.nodes.Text or docutils.nodes.TextElement
+    split : int
+        Location of the represented text to split at.
+
+    Returns
+    -------
+    (left, right) : (type(node), type(node))
+    """
+    if isinstance(node, Text):
+        return Text(node[:split]), Text(node[split:])
+    elif isinstance(node, docutils.nodes.TextElement):
+        if split < 0:
+            split = len(node.astext())+split
+        right = node.deepcopy()
+        left = node.deepcopy()
+        left.clear()
+        offset = 0
+        while offset < split:
+            try:
+                child = right.pop(0)
+            except IndexError:
+                break
+            child_strlen = len(child.astext())
+            if offset+child_strlen < split:
+                left.append(child)
+                offset += child_strlen
+                continue
+            elif offset+child_strlen != split:
+                child_left, child_right = slice_node(child, split-offset)
+                left.append(child_left)
+                right.insert(0, child_right)
+            offset += child_strlen
+        return left, right
+    else:
+        raise ValueError('Cannot split {}'.format(repr(node)))
+
+
+def slice_node_range(node, start, stop):
+    node, right_ = slice_node(node, stop)
+    left_, node = slice_node(node, start)
+    return node
+
+
 def re_partition(children, expr):
     """Splits up a list of text nodes into regex groups.
 
@@ -52,12 +106,11 @@ def re_partition(children, expr):
     ranges = {}
     for child in children:
         start = len(target)
-        if type(child) is Text:
+        if isinstance(child, (Text, docutils.nodes.Inline)) and not getattr(child, 'skip', False):
             target += child.astext()
         end = len(target)
         ranges[id(child)] = [start, end]
     match = expr.search(target)
-    print(expr, target)
     if match is None:
         return children, [], []
     start, end = match.span()
@@ -65,20 +118,17 @@ def re_partition(children, expr):
     middle = [[] for group in match.regs]
     right = []
     for child in children:
-        c_start = ranges[id(child)][0]
-        c_end = ranges[id(child)][1]
+        c_start, c_end = ranges[id(child)]
         if c_end < start:
             left.append(child)
         elif c_start >= end:
             right.append(child)
         else:
             if c_start < start:
-                child_split = start-c_start
-                frag = Text(child[:child_split])
+                frag, right_ = slice_node(child, start-c_start)
                 left.append(frag)
             if c_end > end:
-                child_split = end-c_end
-                frag = Text(child[child_split:])
+                left_, frag = slice_node(child, end-c_end)
                 right.append(frag)
             for idx, span in enumerate(match.regs):
                 # group start/end
@@ -93,25 +143,27 @@ def re_partition(children, expr):
                     # c = (3, 5); g = (5, 7)
                     continue
                 # c = (3, 5); g = (2, 4)
-                frag = Text(child[max(g_start-c_start, 0):g_end-c_start])
+                frag = slice_node_range(child, g_start-c_start, g_end-c_start)
                 middle[idx].append(frag)
     return left, middle, right
 
 
-def match_into(children, expr_text, node, group=1):
+def match_into(children, expr_text, node_cls, group=1, skip=False):
     expr_text = expr_text.format(**EXPR_MAP)
     expr = re.compile(expr_text)
     while True:
         left, middle, right = re_partition(children, expr)
         if not middle:
             break
-        children = left+[node('', *middle[group])]+right
+        node = node_cls('', *middle[group])
+        node.skip = skip
+        children = left+[node]+right
     return children
 
 
 def parse_code(children):
     children = match_into(children, r'(?<!\\)(?<!`)(``?)(?!`)(.+?)(?<!`)\1(?!`)',
-                          docutils.nodes.literal, group=2)
+                          docutils.nodes.literal, group=2, skip=True)
     return children
 
 
@@ -160,11 +212,17 @@ def parse_entities(children):
     return children
 
 
-def parse_emphasis(children):
-    children = match_into(children, r'(?:^|(?<=[.\s]))\*(.*?)\*(?:$|(?=[.\s]))',
-                          docutils.nodes.emphasis)
-    children = match_into(children, r'(?:^|(?<=[.\s]))_(.*?)_(?:$|(?=[.\s]))',
-                          docutils.nodes.emphasis)
+def parse_emphasis_strong(children):
+    def strong_emphasis(rawsource, text):
+        return docutils.nodes.strong(rawsource, docutils.nodes.emphasis(rawsource, text))
+
+    for delim, node_func in ((r'\*\*\*', strong_emphasis),
+                             (r'\*\*', docutils.nodes.strong),
+                             (r'__', docutils.nodes.strong),
+                             (r'\*', docutils.nodes.emphasis),
+                             (r'_', docutils.nodes.emphasis)):
+        children = match_into(children, r'(?:^|(?<=[W\s])){delim}(.*?){delim}(?:$|(?=[\W\s]))'
+                                        .format(delim=delim), node_func)
     return children
 
 
@@ -172,7 +230,7 @@ def parse_text_nodes(children):
     children = parse_code(children)
     children = parse_backslash(children)
     children = parse_entities(children)
-    children = parse_emphasis(children)
+    children = parse_emphasis_strong(children)
     return children
 
 

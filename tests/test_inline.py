@@ -96,3 +96,21 @@ def test_emphasis(text, doctree):
     node = docutils.nodes.paragraph('', docutils.nodes.Text(text))
     node = inline.parse_node(node)
     assert str(node) == doctree
+
+
+@pytest.mark.parametrize('text,doctree', [
+    (r'**test**',
+     '<paragraph><strong>test</strong></paragraph>'),
+    (r'emphasis *one* then **two**',
+     '<paragraph>emphasis <emphasis>one</emphasis> then <strong>two</strong></paragraph>'),
+    (r'***strong emphasis***',
+     '<paragraph><strong><emphasis>strong emphasis</emphasis></strong></paragraph>'),
+    # works, but has redundant tags
+    pytest.mark.xfail((
+        r'**strong and *emphasis* also**',
+        '<paragraph><strong>strong and <emphasis>emphasis</emphasis> also</strong></paragraph>')),
+])
+def test_strong(text, doctree):
+    node = docutils.nodes.paragraph('', docutils.nodes.Text(text))
+    node = inline.parse_node(node)
+    assert str(node) == doctree
