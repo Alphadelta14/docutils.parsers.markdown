@@ -6,7 +6,7 @@ from docutils.parsers.markdown import states
 from docutils.parsers.markdown.context import Context
 
 
-class MarkdownParser(docutils.parsers.Parser):
+class Parser(docutils.parsers.Parser):
     supported = ('markdown', 'md')
 
     def parse(self, inputstring, document):

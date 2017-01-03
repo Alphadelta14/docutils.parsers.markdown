@@ -1,4 +1,4 @@
 
-from docutils.parsers.markdown.parser import MarkdownParser
+from docutils.parsers.markdown.parser import Parser
 
-__all__ = ['MarkdownParser']
+__all__ = ['Parser']
