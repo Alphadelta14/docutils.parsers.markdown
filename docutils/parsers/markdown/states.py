@@ -6,6 +6,7 @@
 from __future__ import absolute_import
 
 import re
+import warnings
 
 import docutils.nodes
 from docutils.statemachine import StateMachine, State,\
@@ -164,19 +165,17 @@ class Section(MarkdownBaseState):
         text = match.group(2).lstrip()
         supersection = context
         # Find the node that is actually a true section or root Body
-        while not hasattr(supersection, 'level'):
+        while not hasattr(supersection, 'section_level'):
             supersection = supersection.parent
-        if level <= supersection.level:
+        if level <= supersection.section_level:
             raise EOFError()
-        trans_context = context
-        while level > supersection.level:
-            subcontext = docutils.nodes.section()
-            subcontext.level = level
-            subcontext['names'].append(docutils.nodes.fully_normalize_name(text))
-            subcontext['ids'].append(docutils.nodes.make_id(text))
-            trans_context.append(subcontext)
-            level -= 1
-            trans_context = subcontext
+        if level != supersection.section_level+1:
+            warnings.warn('Section is not properly nested', UserWarning)
+        subcontext = docutils.nodes.section()
+        subcontext.section_level = level
+        subcontext['names'].append(docutils.nodes.fully_normalize_name(text))
+        subcontext['ids'].append(docutils.nodes.make_id(text))
+        context.append(subcontext)
         header = docutils.nodes.title(text=text)
         subcontext.append(header)
         return context, next_state, self.enter(subcontext, 'Section', nth=1)
@@ -231,7 +230,7 @@ class Section(MarkdownBaseState):
 class Body(Section):
     def bof(self, context):
         context, result = MarkdownBaseState.bof(self, context)
-        context.level = 0
+        context.section_level = 0
         return context, result
 
 
